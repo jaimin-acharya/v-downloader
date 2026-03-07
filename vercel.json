@@ -6,11 +6,11 @@
     },
     "rewrites": [
         {
-            "source": "/api/extract",
+            "source": "/api/info",
             "destination": "/api/extract.py"
         },
         {
-            "source": "/api/stream",
+            "source": "/api/download",
             "destination": "/api/stream.py"
         }
     ]

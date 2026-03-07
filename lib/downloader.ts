@@ -5,41 +5,7 @@ import { VideoInfo, VideoFormat } from '../types/video';
 const execAsync = promisify(exec);
 
 export async function getVideoInfo(url: string): Promise<VideoInfo> {
-  // If we're on Vercel, we attempt to use the Python-based extraction API
-  // Vercel doesn't have Python in the Node.js runtime, so we use a separate Python function
-  if (process.env.VERCEL) {
-    let errorDetail = '';
-    try {
-      const host = process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL || 'v-downloader-black.vercel.app';
-      const protocol = host.startsWith('localhost') ? 'http' : 'https';
-      const baseUrl = host.startsWith('http') ? host : `${protocol}://${host}`;
-
-      console.log(`Vercel mode: fetching info from ${baseUrl}/api/extract`);
-
-      const response = await fetch(`${baseUrl}/api/extract`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url }),
-      });
-
-      if (response.ok) {
-        return await response.json();
-      } else {
-        const errorText = await response.text();
-        errorDetail = `API responded with ${response.status}: ${errorText}`;
-        console.error('Vercel API error:', errorDetail);
-      }
-    } catch (error: any) {
-      errorDetail = error.message;
-      console.error('Vercel extraction fetch failed:', error);
-    }
-
-    // On Vercel, we can't fall back to local exec because python isn't installed in Node runtime
-    throw new Error(`Cloud extraction failed: ${errorDetail || 'Check Vercel logs'}`);
-  }
-
   try {
-    // Local development fallback
     // -j for JSON output, --dump-json to just get info without downloading
     const { stdout } = await execAsync(`python -m yt_dlp -j "${url}"`);
     const data = JSON.parse(stdout);
