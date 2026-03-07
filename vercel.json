@@ -1,17 +1,17 @@
 {
     "functions": {
-        "api/*.py": {
+        "python/*.py": {
             "maxDuration": 60
         }
     },
     "rewrites": [
         {
             "source": "/api/info",
-            "destination": "/api/extract.py"
+            "destination": "/python/info.py"
         },
         {
             "source": "/api/download",
-            "destination": "/api/stream.py"
+            "destination": "/python/download.py"
         }
     ]
 }
