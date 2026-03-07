@@ -1,8 +1,8 @@
 {
-  "functions": {
-    "api/*.py": {
-      "runtime": "@vercel/python@3.1.0",
-      "maxDuration": 60
+    "functions": {
+        "api/*.py": {
+            "runtime": "@vercel/python",
+            "maxDuration": 60
+        }
     }
-  }
 }

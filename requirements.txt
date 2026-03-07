@@ -1,4 +1,3 @@
-yt-dlp==2025.03.31
+yt-dlp
 fastapi
 uvicorn
-werkzeug>=2.2
