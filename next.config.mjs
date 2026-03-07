@@ -15,11 +15,11 @@ const nextConfig = {
     return [
       {
         source: '/api/info',
-        destination: process.env.VERCEL ? '/api/extract.py' : '/api/local-info',
+        destination: process.env.VERCEL ? '/api/extract' : '/api/local-info',
       },
       {
         source: '/api/download',
-        destination: process.env.VERCEL ? '/api/stream.py' : '/api/local-download',
+        destination: process.env.VERCEL ? '/api/stream' : '/api/local-download',
       },
     ];
   },
