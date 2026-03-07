@@ -1,17 +1,8 @@
 {
     "functions": {
         "python/*.py": {
+            "runtime": "@vercel/python",
             "maxDuration": 60
         }
-    },
-    "rewrites": [
-        {
-            "source": "/api/info",
-            "destination": "/python/info.py"
-        },
-        {
-            "source": "/api/download",
-            "destination": "/python/download.py"
-        }
-    ]
+    }
 }

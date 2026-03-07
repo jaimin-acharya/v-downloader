@@ -12,17 +12,14 @@ const nextConfig = {
     ],
   },
   async rewrites() {
-    // Only apply these rewrites locally. Vercel uses vercel.json
-    if (process.env.VERCEL) return [];
-
     return [
       {
         source: '/api/info',
-        destination: '/api/local-info',
+        destination: process.env.VERCEL ? '/python/info.py' : '/api/local-info',
       },
       {
         source: '/api/download',
-        destination: '/api/local-download',
+        destination: process.env.VERCEL ? '/python/download.py' : '/api/local-download',
       },
     ];
   },
