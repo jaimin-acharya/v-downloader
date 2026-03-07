@@ -5,6 +5,30 @@ import { VideoInfo, VideoFormat } from '../types/video';
 const execAsync = promisify(exec);
 
 export async function getVideoInfo(url: string): Promise<VideoInfo> {
+  // If we're on Vercel, we attempt to use the Python-based extraction API
+  // Vercel doesn't have Python in the Node.js runtime, so we use a separate Python function
+  if (process.env.VERCEL) {
+    try {
+      const host = process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL;
+      if (host) {
+        const protocol = host.startsWith('localhost') ? 'http' : 'https';
+        const baseUrl = host.startsWith('http') ? host : `${protocol}://${host}`;
+
+        const response = await fetch(`${baseUrl}/api/extract`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url }),
+        });
+
+        if (response.ok) {
+          return await response.json();
+        }
+      }
+    } catch (error) {
+      console.warn('Vercel extraction failed, falling back to local exec:', error);
+    }
+  }
+
   try {
     // -j for JSON output, --dump-json to just get info without downloading
     const { stdout } = await execAsync(`python -m yt_dlp -j "${url}"`);
@@ -37,7 +61,7 @@ export async function getVideoInfo(url: string): Promise<VideoInfo> {
     };
   } catch (error) {
     console.error('Error fetching video info:', error);
-    throw new Error('Failed to fetch video information');
+    throw new Error('Failed to fetch video information. Make sure yt-dlp is installed.');
   }
 }
 
@@ -46,7 +70,7 @@ function formatDuration(seconds: number): string {
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
   const s = Math.floor(seconds % 60);
-  
+
   if (h > 0) {
     return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   }
