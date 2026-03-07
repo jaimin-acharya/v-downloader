@@ -2,7 +2,7 @@
 
 A premium, production-ready video downloader built with **Next.js 15**, **Tailwind CSS**, and **yt-dlp**. Download high-quality videos and audio from YouTube, Instagram, Facebook, X (Twitter), TikTok, and more with just a few clicks.
 
-![V-Downloader Preview](https://placehold.co/1200x600/0f172a/ffffff?text=V-Downloader+Premium+UI)
+![V-Downloader Preview](https://placehold.co/1200x600/0f172a/ffffff?text=V-Downloader)
 
 ## ✨ Features
 
