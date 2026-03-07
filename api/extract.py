@@ -1,78 +1,75 @@
-import json
-from http.server import BaseHTTPRequestHandler
-from urllib.parse import urlparse, parse_qs
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
 import yt_dlp
+import json
 
-class handler(BaseHTTPRequestHandler):
-    def do_POST(self):
-        content_length = int(self.headers['Content-Length'])
-        post_data = self.rfile.read(content_length)
-        data = json.loads(post_data)
-        url = data.get('url')
+app = FastAPI()
 
-        if not url:
-            self.send_response(400)
-            self.send_header('Content-type', 'application/json')
-            self.end_headers()
-            self.wfile.write(json.dumps({'error': 'URL is required'}).encode())
-            return
+class VideoRequest(BaseModel):
+    url: str
 
-        try:
-            ydl_opts = {
-                'quiet': True,
-                'no_warnings': True,
-                'extract_flat': False,
-            }
-            
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=False)
-                
-                # Process formats to match the expected frontend structure
-                formats = []
-                for f in info.get('formats', []):
-                    if f.get('vcodec') != 'none' or f.get('acodec') != 'none':
-                        formats.append({
-                            'format_id': f.get('format_id'),
-                            'format_note': f.get('format_note', ''),
-                            'ext': f.get('ext'),
-                            'vcodec': f.get('vcodec'),
-                            'acodec': f.get('acodec'),
-                            'width': f.get('width'),
-                            'height': f.get('height'),
-                            'filesize': f.get('filesize'),
-                            'filesize_approx': f.get('filesize_approx'),
-                            'url': f.get('url')
-                        })
+def format_duration(seconds):
+    if not seconds:
+        return '0:00'
+    h = seconds // 3600
+    m = (seconds % 3600) // 60
+    s = seconds % 60
+    
+    if h > 0:
+        return f"{h}:{m:02d}:{s:02d}"
+    return f"{m}:{s:02d}"
 
-                response_data = {
-                    'id': info.get('id'),
-                    'title': info.get('title'),
-                    'thumbnail': info.get('thumbnail'),
-                    'duration': self.format_duration(info.get('duration')),
-                    'duration_raw': info.get('duration'),
-                    'uploader': info.get('uploader'),
-                    'platform': info.get('extractor_key'),
-                    'formats': formats
-                }
+@app.post("/api/info")
+async def get_info(request: VideoRequest):
+    url = request.url
+    if not url:
+        raise HTTPException(status_code=400, detail="URL is required")
 
-                self.send_response(200)
-                self.send_header('Content-type', 'application/json')
-                self.end_headers()
-                self.wfile.write(json.dumps(response_data).encode())
-
-        except Exception as e:
-            self.send_response(500)
-            self.send_header('Content-type', 'application/json')
-            self.end_headers()
-            self.wfile.write(json.dumps({'error': str(e)}).encode())
-
-    def format_duration(self, seconds):
-        if not seconds:
-            return '0:00'
-        h = seconds // 3600
-        m = (seconds % 3600) // 60
-        s = seconds % 60
+    try:
+        ydl_opts = {
+            'quiet': True,
+            'no_warnings': True,
+            'extract_flat': False,
+            'skip_download': True,
+        }
         
-        if h > 0:
-            return f"{h}:{m:02d}:{s:02d}"
-        return f"{m}:{s:02d}"
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            
+            if not info:
+                raise Exception("yt-dlp returned no information")
+
+            # Process formats to match the expected frontend structure
+            formats = []
+            raw_formats = info.get('formats', [])
+            if not raw_formats:
+                raw_formats = [info]
+
+            for f in raw_formats:
+                if f.get('vcodec') != 'none' or f.get('acodec') != 'none':
+                    formats.append({
+                        'format_id': f.get('format_id'),
+                        'format_note': f.get('format_note', ''),
+                        'ext': f.get('ext'),
+                        'vcodec': f.get('vcodec'),
+                        'acodec': f.get('acodec'),
+                        'width': f.get('width'),
+                        'height': f.get('height'),
+                        'filesize': f.get('filesize'),
+                        'filesize_approx': f.get('filesize_approx'),
+                        'url': f.get('url')
+                    })
+
+            return {
+                'id': info.get('id'),
+                'title': info.get('title'),
+                'thumbnail': info.get('thumbnail'),
+                'duration': format_duration(info.get('duration')),
+                'duration_raw': info.get('duration'),
+                'uploader': info.get('uploader'),
+                'platform': info.get('extractor_key'),
+                'formats': formats
+            }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

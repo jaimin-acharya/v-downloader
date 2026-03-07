@@ -1,44 +1,51 @@
-import json
-from http.server import BaseHTTPRequestHandler
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 import yt_dlp
-import sys
-import re
+import os
+import subprocess
 
-class handler(BaseHTTPRequestHandler):
-    def do_POST(self):
-        content_length = int(self.headers['Content-Length'])
-        post_data = self.rfile.read(content_length)
-        data = json.loads(post_data)
-        
-        url = data.get('url')
-        format_id = data.get('formatId', 'best')
+app = FastAPI()
 
-        if not url:
-            self.send_response(400)
-            self.end_headers()
-            return
+class DownloadRequest(BaseModel):
+    url: str
+    formatId: str = 'best'
 
-        try:
-            # We want to stream the output of yt-dlp to the client
-            ydl_opts = {
-                'format': format_id,
-                'outtmpl': '-', # stdout
-                'quiet': True,
-                'no_warnings': True,
-            }
+@app.post("/api/download")
+async def download_video(request: DownloadRequest):
+    url = request.url
+    if not url:
+        raise HTTPException(status_code=400, detail="URL is required")
 
-            self.send_response(200)
-            self.send_header('Content-Type', 'video/mp4')
-            self.send_header('Content-Disposition', 'attachment; filename="video.mp4"')
-            self.end_headers()
+    def iterfile():
+        # Setup yt-dlp to write to stdout
+        ydl_opts = {
+            'format': request.formatId,
+            'outtmpl': '-', # stdout
+            'quiet': True,
+            'no_warnings': True,
+            'noprogress': True,
+        }
 
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                # This opens a stream and writes to self.wfile
-                # In Vercel serverless, this might hit a timeout for long videos
-                ydl.download([url])
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            # We need to capture the output stream
+            # yt-dlp doesn't have a direct "stream to generator" in the library easily
+            # But we can use subprocess to pipe it
+            cmd = ['python3', '-m', 'yt_dlp', '-f', request.formatId, '-o', '-', url]
+            # On Vercel python3 is available
+            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            
+            while True:
+                chunk = process.stdout.read(1024 * 64) # 64kb chunks
+                if not chunk:
+                    break
+                yield chunk
+            
+            process.stdout.close()
+            process.wait()
 
-        except Exception as e:
-            if not self.wfile.closed:
-                self.send_response(500)
-                self.end_headers()
-                self.wfile.write(str(e).encode())
+    return StreamingResponse(
+        iterfile(),
+        media_type="video/mp4",
+        headers={"Content-Disposition": 'attachment; filename="video.mp4"'}
+    )
