@@ -12,14 +12,17 @@ const nextConfig = {
     ],
   },
   async rewrites() {
+    // Only apply these locally. On Vercel, api/*.py files are served automatically at /api/*
+    if (process.env.VERCEL) return [];
+
     return [
       {
         source: '/api/info',
-        destination: process.env.VERCEL ? '/api/extract' : '/api/local-info',
+        destination: '/api/local-info',
       },
       {
         source: '/api/download',
-        destination: process.env.VERCEL ? '/api/stream' : '/api/local-download',
+        destination: '/api/local-download',
       },
     ];
   },
