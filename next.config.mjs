@@ -11,6 +11,21 @@ const nextConfig = {
       { protocol: 'https', hostname: 'placehold.co' },
     ],
   },
+  async rewrites() {
+    // Only apply these rewrites locally. Vercel uses vercel.json
+    if (process.env.VERCEL) return [];
+
+    return [
+      {
+        source: '/api/info',
+        destination: '/api/local-info',
+      },
+      {
+        source: '/api/download',
+        destination: '/api/local-download',
+      },
+    ];
+  },
 };
 
 export default nextConfig
