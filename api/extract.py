@@ -22,14 +22,24 @@ class handler(BaseHTTPRequestHandler):
                 'quiet': True,
                 'no_warnings': True,
                 'extract_flat': False,
+                'skip_download': True,
             }
             
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                print(f"Extracting info for {url}")
                 info = ydl.extract_info(url, download=False)
                 
+                if not info:
+                    raise Exception("yt-dlp returned no information")
+
                 # Process formats to match the expected frontend structure
                 formats = []
-                for f in info.get('formats', []):
+                raw_formats = info.get('formats', [])
+                if not raw_formats:
+                    # Fallback if no formats list but single format
+                    raw_formats = [info]
+
+                for f in raw_formats:
                     if f.get('vcodec') != 'none' or f.get('acodec') != 'none':
                         formats.append({
                             'format_id': f.get('format_id'),
@@ -56,13 +66,14 @@ class handler(BaseHTTPRequestHandler):
                 }
 
                 self.send_response(200)
-                self.send_header('Content-type', 'application/json')
+                self.send_header('Content-Type', 'application/json')
                 self.end_headers()
                 self.wfile.write(json.dumps(response_data).encode())
 
         except Exception as e:
+            print(f"Extraction error: {str(e)}")
             self.send_response(500)
-            self.send_header('Content-type', 'application/json')
+            self.send_header('Content-Type', 'application/json')
             self.end_headers()
             self.wfile.write(json.dumps({'error': str(e)}).encode())
 

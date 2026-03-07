@@ -19,12 +19,12 @@ class handler(BaseHTTPRequestHandler):
             return
 
         try:
-            # We want to stream the output of yt-dlp to the client
             ydl_opts = {
                 'format': format_id,
                 'outtmpl': '-', # stdout
                 'quiet': True,
                 'no_warnings': True,
+                'noprogress': True,
             }
 
             self.send_response(200)
@@ -33,12 +33,11 @@ class handler(BaseHTTPRequestHandler):
             self.end_headers()
 
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                # This opens a stream and writes to self.wfile
-                # In Vercel serverless, this might hit a timeout for long videos
                 ydl.download([url])
 
         except Exception as e:
+            print(f"Streaming error: {str(e)}")
             if not self.wfile.closed:
-                self.send_response(500)
-                self.end_headers()
-                self.wfile.write(str(e).encode())
+                # We can't send headers once stream started, but if it failed before:
+                # This is tricky for streaming, but good for initial failures
+                pass
