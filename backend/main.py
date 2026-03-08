@@ -11,7 +11,12 @@ app = FastAPI()
 # Enable CORS for Vercel
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://v-downloader-black.vercel.app"], # In production, replace with your Vercel URL or specific domain
+    allow_origins=[
+        "https://v-downloader-black.vercel.app",
+        "https://v-downloader-jaimin-acharyas-projects.vercel.app", # Vercel preview domain
+        "http://localhost:3000", # Local for testing
+        "*" # Fallback
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -31,10 +36,13 @@ def format_duration(seconds):
 
 @app.post("/api/info")
 async def get_info(request: Request):
+    print(f"REQUEST RECEIVED: {request.method} {request.url}")
     try:
         data = await request.json()
         url = data.get('url')
-        client_cookies = data.get('cookies') # NEW: Support cookies from client
+        client_cookies = data.get('cookies')
+        print(f"DEBUG: Process URL: {url}")
+        print(f"DEBUG: Client cookies provided: {bool(client_cookies)}")
         
         if not url:
             return JSONResponse({'error': 'URL is required'}, status_code=400)
