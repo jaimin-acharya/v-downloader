@@ -34,22 +34,51 @@ async def get_info(request: Request):
     try:
         data = await request.json()
         url = data.get('url')
+        client_cookies = data.get('cookies') # NEW: Support cookies from client
+        
         if not url:
             return JSONResponse({'error': 'URL is required'}, status_code=400)
 
+        # Get absolute path to cookies.txt in the same directory as main.py
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        cookie_path = os.path.join(current_dir, 'cookies.txt')
+        
         ydl_opts = {
             'quiet': True,
             'no_warnings': True,
             'extract_flat': False,
             'skip_download': True,
+            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
         }
         
-        # Add cookies if the file exists
-        if os.path.exists('cookies.txt'):
-            ydl_opts['cookiefile'] = 'cookies.txt'
+        # Priority 1: Handle client-side cookies (Netscape format string)
+        if client_cookies:
+            print("DEBUG: Using client-provided cookies")
+            import tempfile
+            with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt') as tmp:
+                tmp.write(client_cookies)
+                tmp_path = tmp.name
+            ydl_opts['cookiefile'] = tmp_path
+        # Priority 2: Use server-side local cookies.txt
+        elif os.path.exists(cookie_path):
+            print(f"DEBUG: Found server cookies at {cookie_path}")
+            ydl_opts['cookiefile'] = cookie_path
+        else:
+            print(f"DEBUG: No cookies found")
         
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
+            try:
+                info = ydl.extract_info(url, download=False)
+            except Exception as e:
+                # If it still fails with YouTube, try to provide a clearer message
+                if "Sign in to confirm you're not a bot" in str(e):
+                    raise Exception("YouTube is blocking this server. Please ensure your cookies or cookies.txt are valid.")
+                raise e
+            finally:
+                # Cleanup temp cookie file if created
+                if client_cookies and 'tmp_path' in locals():
+                    try: os.unlink(tmp_path)
+                    except: pass
             
             if not info:
                 raise Exception("yt-dlp returned no information")
@@ -96,15 +125,37 @@ async def download(request: Request):
         data = await request.json()
         url = data.get('url')
         format_id = data.get('formatId', 'best')
+        client_cookies = data.get('cookies')
 
         if not url:
             return JSONResponse({'error': 'URL is required'}, status_code=400)
 
-        # Using yt-dlp to pipe output directly to the response
-        cmd = ['yt-dlp', '-f', format_id, '-o', '-', url]
+        # Get absolute path to cookies.txt
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        cookie_path = os.path.join(current_dir, 'cookies.txt')
         
-        if os.path.exists('cookies.txt'):
-            cmd.extend(['--cookies', 'cookies.txt'])
+        # Priority 1: Handle client-side cookies
+        tmp_path = None
+        if client_cookies:
+            import tempfile
+            with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt') as tmp:
+                tmp.write(client_cookies)
+                tmp_path = tmp.name
+            actual_cookie_path = tmp_path
+        # Priority 2: Server-side cookies
+        elif os.path.exists(cookie_path):
+            actual_cookie_path = cookie_path
+        else:
+            actual_cookie_path = None
+        
+        # Using python -m yt_dlp is safer as it uses the installed package
+        import sys
+        cmd = [sys.executable, '-m', 'yt_dlp', 
+               '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+               '-f', format_id, '-o', '-', url]
+        
+        if actual_cookie_path:
+            cmd.extend(['--cookies', actual_cookie_path])
         
         process = subprocess.Popen(
             cmd, 
@@ -123,6 +174,10 @@ async def download(request: Request):
             finally:
                 process.terminate()
                 process.wait()
+                # Cleanup temp cookie file
+                if tmp_path:
+                    try: os.unlink(tmp_path)
+                    except: pass
 
         return StreamingResponse(
             iterfile(), 
