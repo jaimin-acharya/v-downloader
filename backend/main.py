@@ -11,7 +11,7 @@ app = FastAPI()
 # Enable CORS for Vercel
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # In production, replace with your Vercel URL or specific domain
+    allow_origins=["https://v-downloader-black.vercel.app"], # In production, replace with your Vercel URL or specific domain
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
