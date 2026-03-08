@@ -11,6 +11,8 @@ import QualityTable from "@/components/QualityTable";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
 
+import { getApiUrl } from "@/lib/api";
+
 export default function Downloader() {
   const [url, setUrl] = useState("");
   const [loading, setLoading] = useState(false);
@@ -41,7 +43,7 @@ export default function Downloader() {
     setVideoInfo(null);
 
     try {
-      const response = await axios.post("/api/info", { url });
+      const response = await axios.post(getApiUrl("/api/info"), { url });
       setVideoInfo(response.data);
     } catch (err: any) {
       const message = err.response?.data?.error || "Failed to fetch video information. Please check the URL and try again.";
