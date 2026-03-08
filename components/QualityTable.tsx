@@ -69,6 +69,7 @@ export default function QualityTable({ info, url }: Props) {
           url: url,
           formatId: format.format_id,
           filesize: format.filesize || format.filesize_approx,
+          cookies: typeof window !== "undefined" ? localStorage.getItem("yt_cookies") : null,
         }),
         signal: abortControllerRef.current.signal,
       });

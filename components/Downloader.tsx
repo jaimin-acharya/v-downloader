@@ -12,15 +12,31 @@ import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
 
 import { getApiUrl } from "@/lib/api";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 
 export default function Downloader() {
   const [url, setUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const [videoInfo, setVideoInfo] = useState<VideoInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [cookieDialogOpen, setCookieDialogOpen] = useState(false);
+  const [cookieText, setCookieText] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
+    // Load cookies from local storage if they exist
+    const savedCookies = localStorage.getItem("yt_cookies");
+    if (savedCookies) setCookieText(savedCookies);
+
     const handleFocus = () => {
       if (window.location.hash === "#downloader") {
         inputRef.current?.focus();
@@ -35,27 +51,73 @@ export default function Downloader() {
     return () => window.removeEventListener("hashchange", handleFocus);
   }, []);
 
-  const fetchVideoInfo = async () => {
+  const fetchVideoInfo = async (cookieOverride?: string) => {
     if (!url) return;
 
     setLoading(true);
     setError(null);
     setVideoInfo(null);
 
+    const cookiesToUse = cookieOverride || cookieText;
+
     try {
-      const response = await axios.post(getApiUrl("/api/info"), { url });
+      const response = await axios.post(getApiUrl("/api/info"), {
+        url,
+        cookies: cookiesToUse
+      });
       setVideoInfo(response.data);
+      if (cookiesToUse) {
+        localStorage.setItem("yt_cookies", cookiesToUse);
+      }
     } catch (err: any) {
-      const message = err.response?.data?.error || "Failed to fetch video information. Please check the URL and try again.";
-      setError(message);
-      toast.error(message);
+      const message = err.response?.data?.error || "Failed to fetch video information.";
+
+      if (message.includes("Sign in") || message.includes("cookies")) {
+        setError("YouTube is asking for authentication. Please click the cookie icon below to provide your YouTube cookies.");
+        setCookieDialogOpen(true);
+      } else {
+        setError(message);
+      }
+      toast.error("Fetch failed");
     } finally {
       setLoading(false);
     }
   };
 
+  const saveCookies = () => {
+    localStorage.setItem("yt_cookies", cookieText);
+    setCookieDialogOpen(false);
+    toast.success("Cookies saved! Try downloading again.");
+    if (url) fetchVideoInfo(cookieText);
+  };
+
   return (
-    <div id="downloader" className="w-full max-w-4xl mx-auto">
+    <div id="downloader" className="w-full max-w-4xl mx-auto pb-20">
+      {/* Cookie Manager Dialog */}
+      <Dialog open={cookieDialogOpen} onOpenChange={setCookieDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>YouTube Authentication</DialogTitle>
+            <DialogDescription>
+              YouTube blocks cloud servers. To bypass this, paste your browser cookies in Netscape format.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <Textarea
+              placeholder="# Netscape HTTP Cookie File..."
+              className="font-mono text-xs h-64"
+              value={cookieText}
+              onChange={(e) => setCookieText(e.target.value)}
+            />
+            <p className="text-[10px] text-muted-foreground">
+              Use the "Get cookies.txt LOCALLY" extension to export your cookies.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button onClick={saveCookies} className="w-full">Save and Retry</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <div className="text-center space-y-4 md:space-y-6 mb-12">
         <h1 className="text-4xl sm:text-5xl md:text-7xl font-black mb-6 leading-tight tracking-tight text-slate-900 dark:text-white px-4">
           Download Videos From <span className="text-primary italic">Any Platform</span> Instantly
@@ -82,7 +144,7 @@ export default function Downloader() {
             <Button
               size="lg"
               className="px-4 sm:px-8 rounded-xl bg-primary hover:from-indigo-700 hover:to-purple-700 h-10 sm:h-12 text-sm sm:text-base font-bold"
-              onClick={fetchVideoInfo}
+              onClick={() => fetchVideoInfo()}
               disabled={loading || !url}
             >
               {loading ? (
