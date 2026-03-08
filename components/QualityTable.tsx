@@ -14,6 +14,7 @@ import { Progress } from "@/components/ui/progress";
 import { Loader2, Search, AlertCircle, Download, Music, Video, Zap, Timer, CheckCircle2 } from "lucide-react";
 import { useState, useRef } from "react";
 import { toast } from "sonner";
+import { getApiUrl } from "@/lib/api";
 
 interface Props {
   info: VideoInfo;
@@ -26,7 +27,7 @@ export default function QualityTable({ info, url }: Props) {
   const [speed, setSpeed] = useState("");
   const [eta, setEta] = useState("");
   const [isCompleted, setIsCompleted] = useState(false);
-  
+
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const formatSize = (bytes?: number) => {
@@ -56,15 +57,15 @@ export default function QualityTable({ info, url }: Props) {
     setSpeed("");
     setEta("");
     setIsCompleted(false);
-    
+
     abortControllerRef.current = new AbortController();
     toast.info("Starting download...");
 
     try {
-      const response = await fetch("/api/download", {
+      const response = await fetch(getApiUrl("/api/download"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           url: url,
           formatId: format.format_id,
           filesize: format.filesize || format.filesize_approx,
@@ -76,14 +77,14 @@ export default function QualityTable({ info, url }: Props) {
 
       const reader = response.body?.getReader();
       const contentLength = Number(response.headers.get("Content-Length")) || (format.filesize || format.filesize_approx || 0);
-      
+
       if (!reader) throw new Error("Could not start stream");
 
       let receivedLength = 0;
       let chunks = [];
       let startTime = Date.now();
 
-      while(true) {
+      while (true) {
         const { done, value } = await reader.read();
 
         if (done) break;
@@ -118,7 +119,7 @@ export default function QualityTable({ info, url }: Props) {
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(downloadUrl);
-      
+
       setProgress(100);
       setIsCompleted(true);
       toast.success("Download complete!");
@@ -232,8 +233,8 @@ export default function QualityTable({ info, url }: Props) {
                   </TableCell>
                   <TableCell className="font-mono text-xs sm:text-sm whitespace-nowrap">{formatSize(format.filesize || format.filesize_approx)}</TableCell>
                   <TableCell className="text-right p-3 sm:p-4">
-                    <Button 
-                      size="sm" 
+                    <Button
+                      size="sm"
                       variant={downloadingFormat === format.format_id ? "secondary" : "default"}
                       className="rounded-xl group-hover:scale-105 transition-transform font-bold"
                       onClick={() => handleDownload(format)}
