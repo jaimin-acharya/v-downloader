@@ -22,6 +22,8 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ShieldCheck, Info, UserCheck, Key, MousePointer2 } from "lucide-react";
 
 export default function Downloader() {
   const [url, setUrl] = useState("");
@@ -30,12 +32,35 @@ export default function Downloader() {
   const [error, setError] = useState<string | null>(null);
   const [cookieDialogOpen, setCookieDialogOpen] = useState(false);
   const [cookieText, setCookieText] = useState("");
+  const [hasCookies, setHasCookies] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
+    // Check for cookies in URL hash (from bookmarklet)
+    const hash = window.location.hash;
+    if (hash.startsWith("#cookies=")) {
+      try {
+        const base64Cookies = hash.split("=")[1];
+        const decodedCookies = atob(base64Cookies);
+        if (decodedCookies.includes("# Netscape") || decodedCookies.includes("VISITOR_INFO1_LIVE")) {
+          localStorage.setItem("yt_cookies", decodedCookies);
+          setCookieText(decodedCookies);
+          setHasCookies(true);
+          toast.success("YouTube session synced successfully!");
+          // Clean up URL
+          window.history.replaceState(null, "", window.location.pathname + window.location.search);
+        }
+      } catch (e) {
+        console.error("Failed to parse cookies from hash", e);
+      }
+    }
+
     // Load cookies from local storage if they exist
     const savedCookies = localStorage.getItem("yt_cookies");
-    if (savedCookies) setCookieText(savedCookies);
+    if (savedCookies) {
+      setCookieText(savedCookies);
+      setHasCookies(true);
+    }
 
     const handleFocus = () => {
       if (window.location.hash === "#downloader") {
@@ -68,12 +93,13 @@ export default function Downloader() {
       setVideoInfo(response.data);
       if (cookiesToUse) {
         localStorage.setItem("yt_cookies", cookiesToUse);
+        setHasCookies(true);
       }
     } catch (err: any) {
       const message = err.response?.data?.error || "Failed to fetch video information.";
 
       if (message.includes("Sign in") || message.includes("cookies")) {
-        setError("YouTube is asking for authentication. Please click the cookie icon below to provide your YouTube cookies.");
+        setError("YouTube is blocking this server. Please sync your session using the key icon.");
         setCookieDialogOpen(true);
       } else {
         setError(message);
@@ -86,36 +112,101 @@ export default function Downloader() {
 
   const saveCookies = () => {
     localStorage.setItem("yt_cookies", cookieText);
+    setHasCookies(true);
     setCookieDialogOpen(false);
     toast.success("Cookies saved! Try downloading again.");
     if (url) fetchVideoInfo(cookieText);
   };
 
+  const bookmarkletCode = `javascript:(function(){
+    var cookies = document.cookie;
+    var target = window.location.origin + window.location.pathname;
+    var netscapeContent = "# Netscape HTTP Cookie File\\n";
+    var cookieLines = cookies.split("; ");
+    for(var i=0; i<cookieLines.length; i++) {
+        var part = cookieLines[i].split("=");
+        if(part.length >= 2) {
+            netscapeContent += ".youtube.com\\tTRUE\\t/\\tTRUE\\t2147483647\\t" + part[0] + "\\t" + part.slice(1).join("=") + "\\n";
+        }
+    }
+    window.location.href = "${typeof window !== 'undefined' ? window.location.origin : ''}/#cookies=" + btoa(netscapeContent);
+  })();`.replace(/\s+/g, ' ');
+
   return (
     <div id="downloader" className="w-full max-w-4xl mx-auto pb-20">
       {/* Cookie Manager Dialog */}
       <Dialog open={cookieDialogOpen} onOpenChange={setCookieDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-xl rounded-3xl border-none shadow-2xl">
           <DialogHeader>
-            <DialogTitle>YouTube Authentication</DialogTitle>
-            <DialogDescription>
-              YouTube blocks cloud servers. To bypass this, paste your browser cookies in Netscape format.
+            <DialogTitle className="text-2xl font-bold flex items-center gap-2">
+              <ShieldCheck className="w-6 h-6 text-primary" />
+              YouTube Session Sync
+            </DialogTitle>
+            <DialogDescription className="text-base text-muted-foreground">
+              YouTube blocks cloud downloads. Sync your session to bypass this.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
-            <Textarea
-              placeholder="# Netscape HTTP Cookie File..."
-              className="font-mono text-xs h-64"
-              value={cookieText}
-              onChange={(e) => setCookieText(e.target.value)}
-            />
-            <p className="text-[10px] text-muted-foreground">
-              Use the "Get cookies.txt LOCALLY" extension to export your cookies.
-            </p>
-          </div>
-          <DialogFooter>
-            <Button onClick={saveCookies} className="w-full">Save and Retry</Button>
-          </DialogFooter>
+
+          <Tabs defaultValue="one-click" className="w-full">
+            <TabsList className="grid w-full grid-cols-2 rounded-xl h-12 bg-muted/50 p-1 mb-6">
+              <TabsTrigger value="one-click" className="rounded-lg font-bold data-[state=active]:bg-background data-[state=active]:shadow-sm">
+                <MousePointer2 className="w-4 h-4 mr-2" />
+                One-Click Sync
+              </TabsTrigger>
+              <TabsTrigger value="manual" className="rounded-lg font-bold data-[state=active]:bg-background data-[state=active]:shadow-sm">
+                <Key className="w-4 h-4 mr-2" />
+                Manual Paste
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="one-click" className="space-y-6 py-2">
+              <div className="bg-primary/5 rounded-2xl p-6 border border-primary/10 space-y-4">
+                <div className="flex items-start gap-4">
+                  <div className="bg-primary/10 p-3 rounded-xl mt-1">
+                    <Info className="w-5 h-5 text-primary" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-lg mb-1">How it works</h4>
+                    <p className="text-sm text-muted-foreground leading-relaxed">
+                      Drag the button below to your <b>Bookmarks Bar</b>. When on YouTube, click it once to sync your session here.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex justify-center py-4">
+                  <a
+                    href={bookmarkletCode}
+                    className="inline-flex items-center gap-2 px-8 py-4 bg-primary text-primary-foreground rounded-2xl font-black text-lg hover:scale-105 transition-all shadow-xl shadow-primary/20 cursor-move"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      toast.info("Drag this blue button to your browser's Bookmarks Bar (Ctrl+Shift+B to show it)");
+                    }}
+                  >
+                    <ShieldCheck className="w-6 h-6" />
+                    SYNC YOUTUBE
+                  </a>
+                </div>
+
+                <p className="text-[10px] text-center text-muted-foreground uppercase tracking-widest font-bold">
+                  Drag the button above to your bookmarks bar
+                </p>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="manual" className="space-y-4 py-2">
+              <Textarea
+                placeholder="# Netscape HTTP Cookie File..."
+                className="font-mono text-xs h-64 rounded-2xl border-muted bg-muted/20"
+                value={cookieText}
+                onChange={(e) => setCookieText(e.target.value)}
+              />
+              <DialogFooter>
+                <Button onClick={saveCookies} className="w-full rounded-xl h-12 font-bold text-lg">
+                  Save Cookies
+                </Button>
+              </DialogFooter>
+            </TabsContent>
+          </Tabs>
         </DialogContent>
       </Dialog>
       <div className="text-center space-y-4 md:space-y-6 mb-12">
@@ -125,6 +216,26 @@ export default function Downloader() {
         <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto px-6">
           Paste a link from YouTube, Instagram, Facebook, X, or TikTok and download instantly.
         </p>
+
+        <div className="flex justify-center items-center gap-2 mb-2">
+          {hasCookies ? (
+            <div
+              className="group flex items-center gap-2 px-3 py-1.5 bg-green-500/10 text-green-600 rounded-full border border-green-500/20 cursor-pointer hover:bg-green-500/20 transition-all"
+              onClick={() => setCookieDialogOpen(true)}
+            >
+              <UserCheck className="w-4 h-4" />
+              <span className="text-xs font-bold uppercase tracking-wider">YouTube Session Synced</span>
+            </div>
+          ) : (
+            <div
+              className="group flex items-center gap-2 px-3 py-1.5 bg-amber-500/10 text-amber-600 rounded-full border border-amber-500/20 cursor-pointer hover:bg-amber-500/20 transition-all animate-pulse"
+              onClick={() => setCookieDialogOpen(true)}
+            >
+              <AlertCircle className="w-4 h-4" />
+              <span className="text-xs font-bold uppercase tracking-wider">Sync YouTube Session</span>
+            </div>
+          )}
+        </div>
 
         <div className="relative max-w-2xl mx-auto group px-4">
           <div className="absolute inset-x-4 inset-y-0 bg-gradient-to-r from-indigo-500 to-purple-500 rounded-2xl blur-xl opacity-20 group-hover:opacity-30 transition-opacity"></div>
