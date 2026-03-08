@@ -136,77 +136,87 @@ export default function Downloader() {
     <div id="downloader" className="w-full max-w-4xl mx-auto pb-20">
       {/* Cookie Manager Dialog */}
       <Dialog open={cookieDialogOpen} onOpenChange={setCookieDialogOpen}>
-        <DialogContent className="sm:max-w-xl rounded-3xl border-none shadow-2xl">
-          <DialogHeader>
-            <DialogTitle className="text-2xl font-bold flex items-center gap-2">
-              <ShieldCheck className="w-6 h-6 text-primary" />
-              YouTube Session Sync
-            </DialogTitle>
-            <DialogDescription className="text-base text-muted-foreground">
-              YouTube blocks cloud downloads. Sync your session to bypass this.
-            </DialogDescription>
-          </DialogHeader>
+        <DialogContent className="sm:max-w-xl rounded-[2.5rem] border-none shadow-2xl p-0 overflow-hidden bg-background">
+          <div className="h-2 bg-gradient-to-r from-red-600 via-purple-600 to-indigo-600"></div>
 
-          <Tabs defaultValue="one-click" className="w-full">
-            <TabsList className="grid w-full grid-cols-2 rounded-xl h-12 bg-muted/50 p-1 mb-6">
-              <TabsTrigger value="one-click" className="rounded-lg font-bold data-[state=active]:bg-background data-[state=active]:shadow-sm">
-                <MousePointer2 className="w-4 h-4 mr-2" />
-                One-Click Sync
-              </TabsTrigger>
-              <TabsTrigger value="manual" className="rounded-lg font-bold data-[state=active]:bg-background data-[state=active]:shadow-sm">
-                <Key className="w-4 h-4 mr-2" />
-                Manual Paste
-              </TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="one-click" className="space-y-6 py-2">
-              <div className="bg-primary/5 rounded-2xl p-6 border border-primary/10 space-y-4">
-                <div className="flex items-start gap-4">
-                  <div className="bg-primary/10 p-3 rounded-xl mt-1">
-                    <Info className="w-5 h-5 text-primary" />
+          <div className="p-8">
+            <DialogHeader className="mb-8">
+              <div className="flex justify-center mb-6">
+                <div className="relative">
+                  <div className="absolute inset-0 bg-red-500 blur-2xl opacity-20 animate-pulse"></div>
+                  <div className="relative w-20 h-20 bg-red-500/10 rounded-3xl flex items-center justify-center border border-red-500/20">
+                    <ShieldCheck className="w-10 h-10 text-red-600" />
                   </div>
-                  <div>
-                    <h4 className="font-bold text-lg mb-1">How it works</h4>
-                    <p className="text-sm text-muted-foreground leading-relaxed">
-                      Drag the button below to your <b>Bookmarks Bar</b>. When on YouTube, click it once to sync your session here.
+                </div>
+              </div>
+              <DialogTitle className="text-3xl sm:text-4xl font-black text-center tracking-tight">
+                Sync YouTube
+              </DialogTitle>
+              <DialogDescription className="text-center text-lg mt-2 text-muted-foreground">
+                Activate high-speed downloads & bypass restriction in one tap.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-8">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {[
+                  { step: 1, text: "Drag to Toolbar" },
+                  { step: 2, text: "Open YouTube" },
+                  { step: 3, text: "Click Bookmark" }
+                ].map((item) => (
+                  <div key={item.step} className="p-4 bg-muted/30 rounded-3xl border border-muted text-center space-y-2 group hover:bg-muted/50 transition-colors">
+                    <div className="w-8 h-8 bg-background rounded-full flex items-center justify-center mx-auto text-xs font-black border shadow-sm group-hover:scale-110 transition-transform">
+                      {item.step}
+                    </div>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                      {item.text}
                     </p>
                   </div>
-                </div>
+                ))}
+              </div>
 
-                <div className="flex justify-center py-4">
-                  <a
-                    href={bookmarkletCode}
-                    className="inline-flex items-center gap-2 px-8 py-4 bg-primary text-primary-foreground rounded-2xl font-black text-lg hover:scale-105 transition-all shadow-xl shadow-primary/20 cursor-move"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      toast.info("Drag this blue button to your browser's Bookmarks Bar (Ctrl+Shift+B to show it)");
-                    }}
-                  >
-                    <ShieldCheck className="w-6 h-6" />
-                    SYNC YOUTUBE
-                  </a>
-                </div>
+              <div className="relative group">
+                <div className="absolute -inset-1 bg-gradient-to-r from-red-600 to-purple-600 rounded-[2rem] blur opacity-25 group-hover:opacity-60 transition duration-1000 group-hover:duration-200"></div>
+                <a
+                  href={bookmarkletCode}
+                  className="relative flex items-center justify-center gap-4 w-full py-6 bg-slate-950 text-white rounded-[1.8rem] font-black text-xl shadow-2xl cursor-move transition-all active:scale-95 group-hover:bg-slate-900"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    toast.info("Hold and DRAG this button to your Bookmarks Bar (Ctrl+Shift+B)!");
+                  }}
+                >
+                  <div className="w-10 h-10 bg-white/10 rounded-2xl flex items-center justify-center group-hover:rotate-12 transition-transform">
+                    <ShieldCheck className="w-6 h-6 text-red-500" />
+                  </div>
+                  CONNECT YOUTUBE
+                </a>
+              </div>
 
-                <p className="text-[10px] text-center text-muted-foreground uppercase tracking-widest font-bold">
-                  Drag the button above to your bookmarks bar
+              <div className="flex items-center gap-3 p-4 bg-blue-500/5 rounded-2xl border border-blue-500/10">
+                <Info className="w-4 h-4 text-blue-500 flex-shrink-0" />
+                <p className="text-[10px] sm:text-xs text-muted-foreground leading-relaxed">
+                  We only sync your session for the downloader. Your personal data is never stored outside this session.
                 </p>
               </div>
-            </TabsContent>
+            </div>
+          </div>
 
-            <TabsContent value="manual" className="space-y-4 py-2">
-              <Textarea
-                placeholder="# Netscape HTTP Cookie File..."
-                className="font-mono text-xs h-64 rounded-2xl border-muted bg-muted/20"
-                value={cookieText}
-                onChange={(e) => setCookieText(e.target.value)}
-              />
-              <DialogFooter>
-                <Button onClick={saveCookies} className="w-full rounded-xl h-12 font-bold text-lg">
-                  Save Cookies
-                </Button>
-              </DialogFooter>
-            </TabsContent>
-          </Tabs>
+          <div className="bg-muted/30 p-6 border-t border-muted/50 flex items-center justify-between">
+            <button
+              className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground hover:text-primary transition-colors flex items-center gap-2"
+              onClick={() => {
+                const manual = prompt("Paste your cookies.txt content here:");
+                if (manual) {
+                  setCookieText(manual);
+                  saveCookies();
+                }
+              }}
+            >
+              <Key className="w-3 h-3" />
+              Manual Sync
+            </button>
+            <Button variant="ghost" className="rounded-xl font-bold" onClick={() => setCookieDialogOpen(false)}>Close</Button>
+          </div>
         </DialogContent>
       </Dialog>
       <div className="text-center space-y-4 md:space-y-6 mb-12">
