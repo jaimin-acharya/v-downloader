@@ -44,6 +44,10 @@ async def get_info(request: Request):
             'skip_download': True,
         }
         
+        # Add cookies if the file exists
+        if os.path.exists('cookies.txt'):
+            ydl_opts['cookiefile'] = 'cookies.txt'
+        
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
             
@@ -98,6 +102,9 @@ async def download(request: Request):
 
         # Using yt-dlp to pipe output directly to the response
         cmd = ['yt-dlp', '-f', format_id, '-o', '-', url]
+        
+        if os.path.exists('cookies.txt'):
+            cmd.extend(['--cookies', 'cookies.txt'])
         
         process = subprocess.Popen(
             cmd, 
