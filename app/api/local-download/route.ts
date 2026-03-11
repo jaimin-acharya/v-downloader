@@ -1,5 +1,49 @@
 import { NextRequest } from 'next/server';
 import { spawn } from 'child_process';
+import { writeFileSync, existsSync } from 'fs';
+import { join } from 'path';
+
+// Write cookies to /tmp once per cold start
+function getCookiePath(): string | null {
+  const cookies = process.env.YOUTUBE_COOKIES;
+  if (!cookies) return null;
+
+  const cookiePath = '/tmp/yt-cookies.txt';
+  try {
+    // Only write if not already written in this instance
+    if (!existsSync(cookiePath)) {
+      writeFileSync(cookiePath, cookies, 'utf-8');
+    }
+    return cookiePath;
+  } catch (e) {
+    console.error('Failed to write cookies:', e);
+    return null;
+  }
+}
+
+function buildYtDlpArgs(url: string, formatId?: string): string[] {
+  const cookiePath = getCookiePath();
+
+  const args = [
+    '-m', 'yt_dlp',
+    '-o', '-',
+    // Use android client to bypass bot detection (no browser needed)
+    '--extractor-args', 'youtube:player_client=android,web',
+    '--no-check-certificates',
+    '--no-warnings',
+    // Merge into mp4 container
+    '--merge-output-format', 'mp4',
+    '-f', formatId || 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+  ];
+
+  // Inject cookies if available
+  if (cookiePath) {
+    args.push('--cookies', cookiePath);
+  }
+
+  args.push(url);
+  return args;
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -10,7 +54,8 @@ export async function POST(req: NextRequest) {
       return new Response('URL is required', { status: 400 });
     }
 
-    // If on Vercel, we must use our Python helper as Node lacks Python/yt-dlp
+    // On Vercel, proxy to /api/stream (your Python route)
+    // but pass a flag so the Python route also uses cookies
     if (process.env.VERCEL) {
       const host = process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL;
       const protocol = host?.startsWith('localhost') ? 'http' : 'https';
@@ -19,11 +64,13 @@ export async function POST(req: NextRequest) {
       const response = await fetch(`${baseUrl}/api/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+        // Pass cookies flag so Python route can use them too
+        body: JSON.stringify({ ...body, useCookies: !!process.env.YOUTUBE_COOKIES }),
       });
 
       if (!response.ok) {
-        throw new Error(`Python stream failed with status ${response.status}`);
+        const errText = await response.text();
+        throw new Error(`Stream failed (${response.status}): ${errText}`);
       }
 
       return new Response(response.body, {
@@ -35,13 +82,8 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const args = [
-      '-m', 'yt_dlp',
-      '-o', '-', // Output to stdout
-      '-f', formatId || 'best',
-      url
-    ];
-
+    // Local: spawn yt-dlp directly
+    const args = buildYtDlpArgs(url, formatId);
     const proc = spawn('python', args);
 
     let isClosed = false;
@@ -60,19 +102,14 @@ export async function POST(req: NextRequest) {
         proc.stdout.on('end', () => {
           if (!isClosed) {
             isClosed = true;
-            try {
-              controller.close();
-            } catch (e) {
-              console.error('Close error:', e);
-            }
+            try { controller.close(); } catch (e) { /* already closed */ }
           }
         });
 
         proc.stderr.on('data', (data) => {
           const message = data.toString();
-          if (message.includes('ERROR:')) {
-            console.error(`yt-dlp error: ${message}`);
-          }
+          // Log all stderr for debugging, not just ERRORs
+          console.error(`[yt-dlp] ${message.trim()}`);
         });
 
         proc.on('error', (err) => {
@@ -88,16 +125,14 @@ export async function POST(req: NextRequest) {
       }
     });
 
-    const headers: Record<string, string> = {
-      'Content-Type': 'video/mp4',
-      'Content-Disposition': 'attachment; filename="video.mp4"',
-    };
+    return new Response(stream, {
+      headers: {
+        'Content-Type': 'video/mp4',
+        'Content-Disposition': 'attachment; filename="video.mp4"',
+        ...(filesize ? { 'Content-Length': filesize.toString() } : {}),
+      },
+    });
 
-    if (filesize) {
-      headers['Content-Length'] = filesize.toString();
-    }
-
-    return new Response(stream, { headers });
   } catch (error: any) {
     console.error('Download error:', error);
     return new Response(error.message, { status: 500 });
