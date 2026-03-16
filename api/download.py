@@ -2,6 +2,7 @@ import json
 import os
 import subprocess
 from http.server import BaseHTTPRequestHandler
+from urllib.parse import parse_qs
 
 COOKIE_PATH = '/tmp/yt-cookies.txt'
 
@@ -48,12 +49,21 @@ class handler(BaseHTTPRequestHandler):
     def do_POST(self):
         process = None
         try:
+            content_type = self.headers.get('Content-Type', '')
             content_length = int(self.headers.get('Content-Length', 0))
             post_data = self.rfile.read(content_length)
-            data = json.loads(post_data)
+
+            data = {}
+            if 'application/json' in content_type:
+                data = json.loads(post_data)
+            else:  # Default to form-urlencoded
+                parsed_data = parse_qs(post_data.decode('utf-8'))
+                data = {k: v[0] for k, v in parsed_data.items()}
 
             url = data.get('url')
             format_id = data.get('formatId') or 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best'
+            file_name_from_request = data.get('fileName')
+            file_name = f'filename="{file_name_from_request}"' if file_name_from_request else 'filename="video.mp4"'
 
             if not url:
                 self.send_response(400)
@@ -90,7 +100,7 @@ class handler(BaseHTTPRequestHandler):
             # --- All good, start streaming ---
             self.send_response(200)
             self.send_header('Content-Type', 'video/mp4')
-            self.send_header('Content-Disposition', 'attachment; filename="video.mp4"')
+            self.send_header('Content-Disposition', f'attachment; {file_name}')
             self.end_headers()
 
             self.wfile.write(first_chunk)

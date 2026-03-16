@@ -47,8 +47,16 @@ function buildYtDlpArgs(url: string, formatId?: string): string[] {
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    const { url, formatId, filesize } = body;
+    const contentType = req.headers.get('content-type') || '';
+    let body: any;
+
+    if (contentType.includes('application/json')) {
+      body = await req.json();
+    } else {
+      const formData = await req.formData();
+      body = Object.fromEntries(formData);
+    }
+    const { url, formatId, filesize, fileName } = body;
 
     if (!url) {
       return new Response('URL is required', { status: 400 });
@@ -76,7 +84,7 @@ export async function POST(req: NextRequest) {
       return new Response(response.body, {
         headers: {
           'Content-Type': 'video/mp4',
-          'Content-Disposition': 'attachment; filename="video.mp4"',
+          'Content-Disposition': `attachment; filename="${fileName || 'video.mp4'}"`,
           ...(filesize ? { 'Content-Length': filesize.toString() } : {}),
         },
       });
@@ -128,7 +136,7 @@ export async function POST(req: NextRequest) {
     return new Response(stream, {
       headers: {
         'Content-Type': 'video/mp4',
-        'Content-Disposition': 'attachment; filename="video.mp4"',
+        'Content-Disposition': `attachment; filename="${fileName || 'video.mp4'}"`,
         ...(filesize ? { 'Content-Length': filesize.toString() } : {}),
       },
     });
