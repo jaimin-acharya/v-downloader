@@ -369,15 +369,19 @@ async def download(request: Request):
             actual_cookie_path = get_cookie_path()
 
         # Build yt-dlp command
+        # ✅ Full fixed cmd
         cmd = [
             sys.executable, '-m', 'yt_dlp',
             '--user-agent',
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
             'AppleWebKit/537.36 (KHTML, like Gecko) '
             'Chrome/122.0.0.0 Safari/537.36',
-            '-f', format_id,
-            '-o', '-',  # Output to stdout
+            '-f', f'{format_id}/bestvideo+bestaudio/best',  # fallback chain
+            '--merge-output-format', 'mp4',
+            '-o', tmp_video,
             '--no-playlist',
+            '--no-part',
+            '--extractor-retries', '3',   # retry on transient errors
             url
         ]
 
