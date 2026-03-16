@@ -82,9 +82,7 @@ export default function QualityTable({ info, url }: Props): React.ReactNode {
         ? localStorage.getItem("yt_cookies") ?? undefined
         : undefined;
 
-    const formatId = isAudioOnly
-      ? format.format_id
-      : `${format.format_id}+bestaudio/best`;
+    const formatId = format.format_id;
 
     setDlState({
       formatId: format.format_id,
