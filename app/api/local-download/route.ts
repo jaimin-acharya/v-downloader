@@ -1,148 +1,129 @@
-import { NextRequest } from 'next/server';
-import { spawn } from 'child_process';
-import { writeFileSync, existsSync } from 'fs';
-import { join } from 'path';
+import { NextRequest, NextResponse } from "next/server";
+import { spawn } from "child_process";
+import os from "os";
+import path from "path";
+import { writeFileSync } from "fs";
 
-// Write cookies to /tmp once per cold start
-function getCookiePath(): string | null {
-  const cookies = process.env.YOUTUBE_COOKIES;
-  if (!cookies) return null;
+// ─── Cookie helper ─────────────────────────────────────────────────────────
+function getCookiePath(cookies: string): string {
+  const tmpDir = os.tmpdir();
+  const cookiePath = path.join(tmpDir, "yt-cookies.txt");
 
-  const cookiePath = '/tmp/yt-cookies.txt';
   try {
-    // Only write if not already written in this instance
-    if (!existsSync(cookiePath)) {
-      writeFileSync(cookiePath, cookies, 'utf-8');
-    }
+    writeFileSync(cookiePath, cookies, "utf-8");
     return cookiePath;
   } catch (e) {
-    console.error('Failed to write cookies:', e);
-    return null;
+    console.error("Failed to write cookies:", e);
+    throw new Error("Could not write cookie file");
   }
 }
 
-function buildYtDlpArgs(url: string, formatId?: string): string[] {
-  const cookiePath = getCookiePath();
-
+// ─── yt-dlp args builder ───────────────────────────────────────────────────
+function buildYtDlpArgs(
+  url: string,
+  formatId: string,
+  cookiePath?: string
+): string[] {
   const args = [
-    '-m', 'yt_dlp',
-    '-o', '-',
-    // Use android client to bypass bot detection (no browser needed)
-    '--extractor-args', 'youtube:player_client=android,web',
-    '--no-check-certificates',
-    '--no-warnings',
-    // Merge into mp4 container
-    '--merge-output-format', 'mp4',
-    '-f', formatId || 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+    "--user-agent",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    "-f", `${formatId}/bestvideo+bestaudio/best`,
+    "--merge-output-format", "mp4",
+    "--no-playlist",
+    "--no-part",
+    "-o", "-",
   ];
 
-  // Inject cookies if available
   if (cookiePath) {
-    args.push('--cookies', cookiePath);
+    args.push("--cookies", cookiePath);
   }
 
   args.push(url);
   return args;
 }
 
+// ─── POST handler ──────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
   try {
-    const contentType = req.headers.get('content-type') || '';
-    let body: any;
-
-    if (contentType.includes('application/json')) {
-      body = await req.json();
-    } else {
-      const formData = await req.formData();
-      body = Object.fromEntries(formData);
-    }
-    const { url, formatId, filesize, fileName } = body;
+    const { url, formatId = "best", title = "video", cookies } = await req.json();
 
     if (!url) {
-      return new Response('URL is required', { status: 400 });
+      return NextResponse.json({ error: "URL is required" }, { status: 400 });
     }
 
-    // On Vercel, proxy to /api/stream (your Python route)
-    // but pass a flag so the Python route also uses cookies
-    if (process.env.VERCEL) {
-      const host = process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL;
-      const protocol = host?.startsWith('localhost') ? 'http' : 'https';
-      const baseUrl = host?.startsWith('http') ? host : `${protocol}://${host}`;
-
-      const response = await fetch(`${baseUrl}/api/stream`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        // Pass cookies flag so Python route can use them too
-        body: JSON.stringify({ ...body, useCookies: !!process.env.YOUTUBE_COOKIES }),
-      });
-
-      if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(`Stream failed (${response.status}): ${errText}`);
+    let cookiePath: string | undefined;
+    if (cookies) {
+      try {
+        cookiePath = getCookiePath(cookies);
+      } catch {
+        console.warn("Continuing without cookies");
       }
-
-      return new Response(response.body, {
-        headers: {
-          'Content-Type': 'video/mp4',
-          'Content-Disposition': `attachment; filename="${fileName || 'video.mp4'}"`,
-          ...(filesize ? { 'Content-Length': filesize.toString() } : {}),
-        },
-      });
     }
 
-    // Local: spawn yt-dlp directly
-    const args = buildYtDlpArgs(url, formatId);
-    const proc = spawn('python', args);
+    const args = buildYtDlpArgs(url, formatId, cookiePath);
+    console.log("DEBUG: yt-dlp args:", args.join(" "));
 
-    let isClosed = false;
+    const safeTitle = title.replace(/[^a-zA-Z0-9 _\-()]/g, "").trim() || "video";
+
     const stream = new ReadableStream({
       start(controller) {
-        proc.stdout.on('data', (chunk) => {
-          if (!isClosed) {
-            try {
-              controller.enqueue(chunk);
-            } catch (e) {
-              console.error('Enqueue error:', e);
-            }
-          }
-        });
+        let isClosed = false;
 
-        proc.stdout.on('end', () => {
+        const safeClose = () => {
           if (!isClosed) {
             isClosed = true;
-            try { controller.close(); } catch (e) { /* already closed */ }
+            controller.close();
           }
-        });
+        };
 
-        proc.stderr.on('data', (data) => {
-          const message = data.toString();
-          // Log all stderr for debugging, not just ERRORs
-          console.error(`[yt-dlp] ${message.trim()}`);
-        });
-
-        proc.on('error', (err) => {
+        const safeError = (err: Error) => {
           if (!isClosed) {
             isClosed = true;
             controller.error(err);
           }
+        };
+
+        const ytDlp = spawn("yt-dlp", args);
+
+        ytDlp.stdout.on("data", (chunk: Buffer) => {
+          if (!isClosed) {
+            controller.enqueue(chunk);
+          }
+        });
+
+        ytDlp.stderr.on("data", (data: Buffer) => {
+          console.error("[yt-dlp]", data.toString());
+        });
+
+        ytDlp.on("close", (code) => {
+          if (code !== 0) {
+            console.error(`yt-dlp exited with code ${code}`);
+          }
+          safeClose();
+        });
+
+        ytDlp.on("error", (err) => {
+          console.error("yt-dlp spawn error:", err);
+          safeError(err);
         });
       },
-      cancel() {
-        isClosed = true;
-        proc.kill();
-      }
     });
 
-    return new Response(stream, {
+    return new NextResponse(stream, {
+      status: 200,
       headers: {
-        'Content-Type': 'video/mp4',
-        'Content-Disposition': `attachment; filename="${fileName || 'video.mp4'}"`,
-        ...(filesize ? { 'Content-Length': filesize.toString() } : {}),
+        "Content-Type": "video/mp4",
+        "Content-Disposition": `attachment; filename="${safeTitle}.mp4"`,
+        "Access-Control-Expose-Headers": "Content-Disposition",
+        "Cache-Control": "no-cache",
       },
     });
 
-  } catch (error: any) {
-    console.error('Download error:', error);
-    return new Response(error.message, { status: 500 });
+  } catch (err: any) {
+    console.error("Download route error:", err);
+    return NextResponse.json(
+      { error: err.message || "Download failed" },
+      { status: 500 }
+    );
   }
 }

@@ -1,12 +1,10 @@
 import os
 import sys
-import json
-import tempfile
 import subprocess
 import traceback
 import yt_dlp
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, Request
 from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -27,13 +25,13 @@ app = FastAPI(lifespan=lifespan)
 
 
 # ─── CORS ─────────────────────────────────────────────────────────────────────
+# Get allowed origins from environment variable (comma-separated origins)
+ALLOWED_ORIGINS = os.environ.get("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:3001").split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://localhost:3001",
-    ],
-    allow_origin_regex=r"https://.*\.vercel\.app",  # All Vercel preview URLs
+    allow_origins=ALLOWED_ORIGINS,
+    allow_origin_regex=os.environ.get("ALLOW_ORIGIN_REGEX", r"https://.*\.vercel\.app"),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -56,28 +54,9 @@ def format_duration(seconds):
         return '0:00'
 
 
-def get_cookie_path():
-    """Returns server-side cookies.txt path if it exists."""
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    cookie_path = os.path.join(current_dir, 'cookies.txt')
-    return cookie_path if os.path.exists(cookie_path) else None
-
-
-def write_temp_cookies(client_cookies: str):
-    """Writes client cookie string to a temp file and returns the path."""
-    tmp = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt')
-    tmp.write(client_cookies)
-    tmp.close()
-    return tmp.name
-
-
 def parse_error(e: Exception) -> str:
     """Returns a user-friendly error message."""
     msg = str(e)
-    if "Sign in to confirm you're not a bot" in msg or "bot" in msg.lower():
-        return "YouTube is blocking this server. Please provide fresh cookies from your browser."
-    if "age" in msg.lower() or "age-restricted" in msg.lower():
-        return "This video is age-restricted. Please provide cookies from a logged-in YouTube account."
     if "private" in msg.lower():
         return "This video is private and cannot be downloaded."
     if "unavailable" in msg.lower():
@@ -156,7 +135,6 @@ async def health():
 
 @app.post("/api/download")
 async def download(request: Request):
-    tmp_path = None
     tmp_video = None
 
     try:
@@ -164,19 +142,11 @@ async def download(request: Request):
         url = data.get('url')
         format_id = data.get('formatId', 'best')
         title = data.get('title', 'video')
-        client_cookies = data.get('cookies')
 
         if not url:
             return JSONResponse({'error': 'URL is required'}, status_code=400)
 
         print(f"DEBUG: Downloading — URL: {url}, format: {format_id}")
-
-        # Resolve cookies
-        if client_cookies:
-            tmp_path = write_temp_cookies(client_cookies)
-            actual_cookie_path = tmp_path
-        else:
-            actual_cookie_path = get_cookie_path()
 
         # Sanitize title for filename
         safe_title = "".join(
@@ -197,15 +167,12 @@ async def download(request: Request):
             'AppleWebKit/537.36 (KHTML, like Gecko) '
             'Chrome/122.0.0.0 Safari/537.36',
             '-f', format_id,
-            '--merge-output-format', 'mp4',  # Force mp4 merge
-            '-o', tmp_video,                  # Write to /tmp
+            '--merge-output-format', 'mp4',
+            '-o', tmp_video,
             '--no-playlist',
-            '--no-part',                      # No .part files
+            '--no-part',
             url
         ]
-
-        if actual_cookie_path:
-            cmd.extend(['--cookies', actual_cookie_path])
 
         print(f"DEBUG: Running command: {' '.join(cmd)}")
 
@@ -233,25 +200,23 @@ async def download(request: Request):
             try:
                 with open(tmp_video, 'rb') as f:
                     while True:
-                        chunk = f.read(1024 * 64)  # 64KB chunks
+                        chunk = f.read(1024 * 64)
                         if not chunk:
                             break
                         yield chunk
             finally:
-                # Cleanup temp files
-                for path in [tmp_video, tmp_path]:
-                    if path and os.path.exists(path):
-                        try:
-                            os.unlink(path)
-                        except:
-                            pass
+                if tmp_video and os.path.exists(tmp_video):
+                    try:
+                        os.unlink(tmp_video)
+                    except:
+                        pass
 
         return StreamingResponse(
             stream_file(),
             media_type="video/mp4",
             headers={
                 "Content-Disposition": f'attachment; filename="{safe_title}.mp4"',
-                "Content-Length": str(file_size),  # Now we know exact size!
+                "Content-Length": str(file_size),
                 "Access-Control-Expose-Headers": "Content-Disposition, Content-Length",
                 "Cache-Control": "no-cache",
             }
@@ -259,25 +224,21 @@ async def download(request: Request):
 
     except Exception as e:
         print(f"ERROR in /api/download: {str(e)}")
-        # Cleanup on error
-        for path in [tmp_video, tmp_path]:
-            if path and os.path.exists(path):
-                try:
-                    os.unlink(path)
-                except:
-                    pass
+        if tmp_video and os.path.exists(tmp_video):
+            try:
+                os.unlink(tmp_video)
+            except:
+                pass
         return JSONResponse({'error': parse_error(e)}, status_code=500)    
 
 
 @app.post("/api/info")
 async def get_info(request: Request):
     print(f"REQUEST: {request.method} {request.url}")
-    tmp_path = None
 
     try:
         data = await request.json()
         url = data.get('url')
-        client_cookies = data.get('cookies')
 
         if not url:
             return JSONResponse({'error': 'URL is required'}, status_code=400)
@@ -295,19 +256,6 @@ async def get_info(request: Request):
                 'Chrome/122.0.0.0 Safari/537.36'
             ),
         }
-
-        # Cookie priority: client > server-side file
-        if client_cookies:
-            print("DEBUG: Using client-provided cookies")
-            tmp_path = write_temp_cookies(client_cookies)
-            ydl_opts['cookiefile'] = tmp_path
-        else:
-            server_cookie = get_cookie_path()
-            if server_cookie:
-                print(f"DEBUG: Using server cookies: {server_cookie}")
-                ydl_opts['cookiefile'] = server_cookie
-            else:
-                print("DEBUG: No cookies available")
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
@@ -337,116 +285,14 @@ async def get_info(request: Request):
             status_code=500
         )
 
-    finally:
-        if tmp_path:
-            try:
-                os.unlink(tmp_path)
-            except:
-                pass
-
-
-@app.post("/api/download")
-async def download(request: Request):
-    tmp_path = None
-
-    try:
-        data = await request.json()
-        url = data.get('url')
-        format_id = data.get('formatId', 'best')
-        title = data.get('title', 'video')
-        client_cookies = data.get('cookies')
-
-        if not url:
-            return JSONResponse({'error': 'URL is required'}, status_code=400)
-
-        print(f"DEBUG: Downloading — URL: {url}, format: {format_id}, title: {title}")
-
-        # Resolve cookie path
-        if client_cookies:
-            tmp_path = write_temp_cookies(client_cookies)
-            actual_cookie_path = tmp_path
-        else:
-            actual_cookie_path = get_cookie_path()
-
-        # Build yt-dlp command
-        # ✅ Full fixed cmd
-        cmd = [
-            sys.executable, '-m', 'yt_dlp',
-            '--user-agent',
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
-            'AppleWebKit/537.36 (KHTML, like Gecko) '
-            'Chrome/122.0.0.0 Safari/537.36',
-            '-f', f'{format_id}/bestvideo+bestaudio/best',  # fallback chain
-            '--merge-output-format', 'mp4',
-            '-o', tmp_video,
-            '--no-playlist',
-            '--no-part',
-            '--extractor-retries', '3',   # retry on transient errors
-            url
-        ]
-
-        if actual_cookie_path:
-            cmd.extend(['--cookies', actual_cookie_path])
-
-        # Sanitize title for Content-Disposition header
-        safe_title = "".join(
-            c for c in title if c.isalnum() or c in (' ', '-', '_')
-        ).strip() or 'video'
-
-        process = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            bufsize=1024 * 64
-        )
-
-        def stream_video():
-            try:
-                while True:
-                    chunk = process.stdout.read(1024 * 64)
-                    if not chunk:
-                        break
-                    yield chunk
-            except Exception as e:
-                print(f"STREAM ERROR: {e}")
-            finally:
-                process.terminate()
-                process.wait()
-                if tmp_path:
-                    try:
-                        os.unlink(tmp_path)
-                    except:
-                        pass
-
-        return StreamingResponse(
-            stream_video(),
-            media_type="video/mp4",
-            headers={
-                "Content-Disposition": f'attachment; filename="{safe_title}.mp4"',
-                "Access-Control-Expose-Headers": "Content-Disposition, Content-Length",
-                "Cache-Control": "no-cache",
-            }
-        )
-
-    except Exception as e:
-        print(f"ERROR in /api/download: {str(e)}")
-        if tmp_path:
-            try:
-                os.unlink(tmp_path)
-            except:
-                pass
-        return JSONResponse({'error': parse_error(e)}, status_code=500)
-
 
 @app.post("/api/formats")
 async def get_formats(request: Request):
     """Lightweight endpoint — returns only clean format list."""
-    tmp_path = None
 
     try:
         data = await request.json()
         url = data.get('url')
-        client_cookies = data.get('cookies')
 
         if not url:
             return JSONResponse({'error': 'URL is required'}, status_code=400)
@@ -457,14 +303,6 @@ async def get_formats(request: Request):
             'skip_download': True,
         }
 
-        if client_cookies:
-            tmp_path = write_temp_cookies(client_cookies)
-            ydl_opts['cookiefile'] = tmp_path
-        else:
-            server_cookie = get_cookie_path()
-            if server_cookie:
-                ydl_opts['cookiefile'] = server_cookie
-
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
 
@@ -474,13 +312,6 @@ async def get_formats(request: Request):
 
     except Exception as e:
         return JSONResponse({'error': parse_error(e)}, status_code=500)
-
-    finally:
-        if tmp_path:
-            try:
-                os.unlink(tmp_path)
-            except:
-                pass
 
 
 # ─── Entry point ──────────────────────────────────────────────────────────────
