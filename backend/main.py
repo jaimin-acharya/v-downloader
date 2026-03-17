@@ -153,6 +153,7 @@ async def download(request: Request):
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
             'AppleWebKit/537.36 (KHTML, like Gecko) '
             'Chrome/122.0.0.0 Safari/537.36',
+            '--extractor-args', 'youtube:player_client=tv_embedded,web',
             '-f', format_id,
             '--merge-output-format', 'mp4',
             '-o', tmp_video,
@@ -242,6 +243,9 @@ async def get_info(request: Request):
                 'AppleWebKit/537.36 (KHTML, like Gecko) '
                 'Chrome/122.0.0.0 Safari/537.36'
             ),
+            'extractor_args': {
+                'youtube': {'player_client': ['tv_embedded', 'web']}
+            },
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -288,6 +292,9 @@ async def get_formats(request: Request):
             'quiet': True,
             'no_warnings': True,
             'skip_download': True,
+            'extractor_args': {
+                'youtube': {'player_client': ['tv_embedded', 'web']}
+            },
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
