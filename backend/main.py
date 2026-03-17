@@ -3,25 +3,12 @@ import sys
 import subprocess
 import traceback
 import yt_dlp
-from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 
-# ─── Auto-update yt-dlp on startup ───────────────────────────────────────────
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    print("INFO: Updating yt-dlp to latest version...")
-    result = subprocess.run(
-        [sys.executable, "-m", "pip", "install", "--upgrade", "yt-dlp"],
-        capture_output=True, text=True
-    )
-    print(f"INFO: yt-dlp update result: {result.stdout.strip()}")
-    yield
-
-
-app = FastAPI(lifespan=lifespan)
+app = FastAPI()
 
 
 # ─── CORS ─────────────────────────────────────────────────────────────────────
