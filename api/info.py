@@ -1,7 +1,43 @@
 import json
+import os
+import time
 from http.server import BaseHTTPRequestHandler
 import yt_dlp
 import traceback
+
+COOKIE_PATH = '/tmp/yt-cookies.txt'
+
+def get_ydl_opts() -> dict:
+    """Return yt-dlp options dictionary based on environment variables."""
+    opts = {
+        'quiet': True,
+        'no_warnings': True,
+        'extract_flat': False,
+        'skip_download': True,
+    }
+
+    browser_cookie = os.environ.get('YOUTUBE_COOKIES_BROWSER')
+    if browser_cookie:
+        print(f'[yt-dlp] Using cookies from browser: {browser_cookie}')
+        opts['cookies_from_browser'] = (browser_cookie,)
+        return opts
+
+    env_cookies = os.environ.get('YOUTUBE_COOKIES', '').strip()
+    if env_cookies:
+        try:
+            # Re-write cookie file periodically
+            if not os.path.exists(COOKIE_PATH) or os.path.getmtime(COOKIE_PATH) < (time.time() - 60):
+                with open(COOKIE_PATH, 'w') as f:
+                    f.write(env_cookies)
+            print('[yt-dlp] Using cookies from environment variable')
+            opts['cookiefile'] = COOKIE_PATH
+            return opts
+        except Exception as e:
+            print(f'[cookies] Failed to write cookie file: {e}')
+
+    print('[yt-dlp] No cookies found — attempting without (may fail for some videos)')
+    return opts
+
 
 class handler(BaseHTTPRequestHandler):
     def do_POST(self):
@@ -25,12 +61,7 @@ class handler(BaseHTTPRequestHandler):
                 self.wfile.write(json.dumps({'error': 'URL is required'}).encode())
                 return
 
-            ydl_opts = {
-                'quiet': True,
-                'no_warnings': True,
-                'extract_flat': False,
-                'skip_download': True,
-            }
+            ydl_opts = get_ydl_opts()
             
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=False)
