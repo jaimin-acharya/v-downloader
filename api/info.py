@@ -27,8 +27,10 @@ def get_ydl_opts() -> dict:
         try:
             # Re-write cookie file periodically
             if not os.path.exists(COOKIE_PATH) or os.path.getmtime(COOKIE_PATH) < (time.time() - 60):
-                with open(COOKIE_PATH, 'w') as f:
-                    f.write(env_cookies)
+                # Convert CRLF → LF (yt-dlp on Linux requires LF; CRLF causes HTTP 400)
+                content = env_cookies.replace('\\n', '\n').replace('\r\n', '\n').replace('\r', '\n')
+                with open(COOKIE_PATH, 'w', encoding='utf-8', newline='\n') as f:
+                    f.write(content)
             print('[yt-dlp] Using cookies from environment variable')
             opts['cookiefile'] = COOKIE_PATH
             return opts
