@@ -18,8 +18,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the rest of the application
 COPY . .
 
-# Create cookies file if it doesn't exist (prevents crash)
-RUN touch cookies.txt
+# Create cookies file if it doesn't exist, and fix CRLF -> LF newlines
+# (yt-dlp on Linux requires LF; CRLF causes HTTP Error 400)
+RUN touch cookies.txt && sed -i 's/\r$//' cookies.txt
 
 # Give ownership to non-root user
 RUN chown -R appuser:appuser /app

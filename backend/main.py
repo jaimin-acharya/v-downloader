@@ -2,6 +2,7 @@ import os
 import sys
 import subprocess
 import traceback
+import time
 import yt_dlp
 from fastapi import FastAPI, Request
 from fastapi.responses import StreamingResponse, JSONResponse
@@ -9,6 +10,66 @@ from fastapi.middleware.cors import CORSMiddleware
 
 
 app = FastAPI()
+
+# ─── Cookie management ───────────────────────────────────────────────────────
+BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
+COOKIE_FILE = os.path.join(BACKEND_DIR, 'cookies.txt')
+TMP_COOKIE_FILE = '/tmp/yt-cookies.txt'
+
+
+def _ensure_lf_newlines(src: str, dest: str) -> bool:
+    """
+    Copy cookie file from src to dest, converting CRLF → LF.
+    yt-dlp on Linux requires LF newlines; CRLF causes HTTP 400.
+    Returns True if a valid cookie file was written.
+    """
+    try:
+        with open(src, 'r', encoding='utf-8') as f:
+            content = f.read()
+        if not content.strip():
+            return False
+        # Convert CRLF → LF
+        content = content.replace('\r\n', '\n').replace('\r', '\n')
+        with open(dest, 'w', encoding='utf-8', newline='\n') as f:
+            f.write(content)
+        return True
+    except Exception as e:
+        print(f'[cookies] Failed to process cookie file: {e}')
+        return False
+
+
+def get_cookie_opts() -> dict:
+    """
+    Returns yt-dlp cookie options.
+    Priority: 1) cookies.txt in backend dir  2) YOUTUBE_COOKIES env var
+    """
+    # 1) Check for cookies.txt bundled with the app
+    if os.path.exists(COOKIE_FILE) and os.path.getsize(COOKIE_FILE) > 0:
+        # Re-process periodically (handles updates on redeploy)
+        needs_refresh = (
+            not os.path.exists(TMP_COOKIE_FILE)
+            or os.path.getmtime(TMP_COOKIE_FILE) < os.path.getmtime(COOKIE_FILE)
+        )
+        if needs_refresh:
+            if _ensure_lf_newlines(COOKIE_FILE, TMP_COOKIE_FILE):
+                print(f'[cookies] Loaded cookies from {COOKIE_FILE} → {TMP_COOKIE_FILE}')
+        if os.path.exists(TMP_COOKIE_FILE):
+            return {'cookiefile': TMP_COOKIE_FILE}
+
+    # 2) Fallback: YOUTUBE_COOKIES environment variable (Netscape format string)
+    env_cookies = os.environ.get('YOUTUBE_COOKIES', '').strip()
+    if env_cookies:
+        try:
+            content = env_cookies.replace('\\n', '\n').replace('\r\n', '\n').replace('\r', '\n')
+            with open(TMP_COOKIE_FILE, 'w', encoding='utf-8', newline='\n') as f:
+                f.write(content)
+            print('[cookies] Loaded cookies from YOUTUBE_COOKIES env var')
+            return {'cookiefile': TMP_COOKIE_FILE}
+        except Exception as e:
+            print(f'[cookies] Failed to write env cookies: {e}')
+
+    print('[cookies] No cookies found — some videos may fail')
+    return {}
 
 
 # ─── CORS ─────────────────────────────────────────────────────────────────────
@@ -147,6 +208,12 @@ async def download(request: Request):
         if os.path.exists(tmp_video):
             os.unlink(tmp_video)
 
+        # Build cookie args for the CLI command
+        cookie_opts = get_cookie_opts()
+        cookie_args = []
+        if 'cookiefile' in cookie_opts:
+            cookie_args = ['--cookies', cookie_opts['cookiefile']]
+
         cmd = [
             sys.executable, '-m', 'yt_dlp',
             '--user-agent',
@@ -154,6 +221,7 @@ async def download(request: Request):
             'AppleWebKit/537.36 (KHTML, like Gecko) '
             'Chrome/122.0.0.0 Safari/537.36',
             '--extractor-args', 'youtube:player_client=tv_embedded,web',
+            *cookie_args,
             '-f', format_id,
             '--merge-output-format', 'mp4',
             '-o', tmp_video,
@@ -246,6 +314,7 @@ async def get_info(request: Request):
             'extractor_args': {
                 'youtube': {'player_client': ['tv_embedded', 'web']}
             },
+            **get_cookie_opts(),
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -295,6 +364,7 @@ async def get_formats(request: Request):
             'extractor_args': {
                 'youtube': {'player_client': ['tv_embedded', 'web']}
             },
+            **get_cookie_opts(),
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:

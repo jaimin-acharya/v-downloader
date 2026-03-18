@@ -126,3 +126,25 @@ The frontend cannot run yt-dlp directly on Vercel's serverless functions, so it 
 | `PORT` | Server port | `8080` |
 | `ALLOWED_ORIGINS` | Comma-separated CORS origins | `http://localhost:3000` |
 | `ALLOW_ORIGIN_REGEX` | CORS regex pattern | `https://.*\.vercel\.app` |
+| `YOUTUBE_COOKIES` | YouTube cookies in Netscape format (optional) | — |
+
+---
+
+## Cookie Setup (Fix "Sign in to confirm you're not a bot")
+
+YouTube often blocks server-side requests. Cookies from a logged-in browser session fix this.
+
+### Option A: Environment Variable on Render (Recommended)
+1. Export cookies from your browser using the [Get cookies.txt LOCALLY](https://chrome.google.com/webstore/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc) Chrome extension
+2. Copy the **entire contents** of the exported `cookies.txt`
+3. In Render dashboard → your service → **Environment** → add:
+   - **Key**: `YOUTUBE_COOKIES`
+   - **Value**: paste the cookie contents
+4. Redeploy
+
+### Option B: Commit `cookies.txt` to Repo (Private repos only)
+1. Export cookies and save as `backend/cookies.txt`
+2. Ensure the first line is `# Netscape HTTP Cookie File`
+3. Commit and push — Render will pick it up on deploy
+
+> **Note**: Cookies expire! You'll need to re-export them periodically (every few weeks).
