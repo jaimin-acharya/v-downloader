@@ -1,29 +1,36 @@
 import json
 import os
 import subprocess
+import time
 from http.server import BaseHTTPRequestHandler
 from urllib.parse import parse_qs
 
 COOKIE_PATH = '/tmp/yt-cookies.txt'
 
-def prepare_cookies() -> str | None:
-    """Write YOUTUBE_COOKIES env var to /tmp and return path, or None."""
-    cookies = os.environ.get('YOUTUBE_COOKIES', '').strip()
-    if not cookies:
-        return None
-    try:
-        if not os.path.exists(COOKIE_PATH):
-            with open(COOKIE_PATH, 'w') as f:
-                f.write(cookies)
-        return COOKIE_PATH
-    except Exception as e:
-        print(f'[cookies] Failed to write cookie file: {e}')
-        return None
+def get_cookie_args() -> list[str]:
+    """Return yt-dlp cookie arguments based on environment variables."""
+    browser_cookie = os.environ.get('YOUTUBE_COOKIES_BROWSER')
+    if browser_cookie:
+        print(f'[yt-dlp] Using cookies from browser: {browser_cookie}')
+        return ['--cookies-from-browser', browser_cookie]
+
+    env_cookies = os.environ.get('YOUTUBE_COOKIES', '').strip()
+    if env_cookies:
+        try:
+            if not os.path.exists(COOKIE_PATH) or os.path.getmtime(COOKIE_PATH) < (time.time() - 60):
+                 with open(COOKIE_PATH, 'w') as f:
+                    f.write(env_cookies)
+            print('[yt-dlp] Using cookies from environment variable')
+            return ['--cookies', COOKIE_PATH]
+        except Exception as e:
+            print(f'[cookies] Failed to write cookie file: {e}')
+            return []
+
+    print('[yt-dlp] No cookies found — attempting without (may fail for some videos)')
+    return []
 
 
 def build_cmd(url: str, format_id: str) -> list[str]:
-    cookie_path = prepare_cookies()
-
     cmd = [
         'python3', '-m', 'yt_dlp',
         '--extractor-args', 'youtube:player_client=android,web',
@@ -34,12 +41,7 @@ def build_cmd(url: str, format_id: str) -> list[str]:
         '-o', '-',
     ]
 
-    if cookie_path:
-        cmd += ['--cookies', cookie_path]
-        print('[yt-dlp] Using cookies from environment')
-    else:
-        print('[yt-dlp] No cookies found — attempting without (may fail for some videos)')
-
+    cmd += get_cookie_args()
     cmd.append(url)
     return cmd
 
