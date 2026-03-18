@@ -11,24 +11,23 @@ from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
 
-# ─── Cookie management ───────────────────────────────────────────────────────
+# ─── Configuration ────────────────────────────────────────────────────────────
 BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
 COOKIE_FILE = os.path.join(BACKEND_DIR, 'cookies.txt')
 TMP_COOKIE_FILE = '/tmp/yt-cookies.txt'
+PROXY_URL = os.environ.get('PROXY_URL', '').strip()  # e.g. socks5://user:pass@host:port
 
 
 def _ensure_lf_newlines(src: str, dest: str) -> bool:
     """
     Copy cookie file from src to dest, converting CRLF → LF.
     yt-dlp on Linux requires LF newlines; CRLF causes HTTP 400.
-    Returns True if a valid cookie file was written.
     """
     try:
         with open(src, 'r', encoding='utf-8') as f:
             content = f.read()
         if not content.strip():
             return False
-        # Convert CRLF → LF
         content = content.replace('\r\n', '\n').replace('\r', '\n')
         with open(dest, 'w', encoding='utf-8', newline='\n') as f:
             f.write(content)
@@ -38,38 +37,70 @@ def _ensure_lf_newlines(src: str, dest: str) -> bool:
         return False
 
 
-def get_cookie_opts() -> dict:
-    """
-    Returns yt-dlp cookie options.
-    Priority: 1) cookies.txt in backend dir  2) YOUTUBE_COOKIES env var
-    """
-    # 1) Check for cookies.txt bundled with the app
+def _get_cookie_opts() -> dict:
+    """Returns yt-dlp cookie options."""
+    # 1) cookies.txt in backend dir
     if os.path.exists(COOKIE_FILE) and os.path.getsize(COOKIE_FILE) > 0:
-        # Re-process periodically (handles updates on redeploy)
         needs_refresh = (
             not os.path.exists(TMP_COOKIE_FILE)
             or os.path.getmtime(TMP_COOKIE_FILE) < os.path.getmtime(COOKIE_FILE)
         )
         if needs_refresh:
             if _ensure_lf_newlines(COOKIE_FILE, TMP_COOKIE_FILE):
-                print(f'[cookies] Loaded cookies from {COOKIE_FILE} → {TMP_COOKIE_FILE}')
+                print(f'[cookies] Loaded from {COOKIE_FILE}')
         if os.path.exists(TMP_COOKIE_FILE):
             return {'cookiefile': TMP_COOKIE_FILE}
 
-    # 2) Fallback: YOUTUBE_COOKIES environment variable (Netscape format string)
+    # 2) YOUTUBE_COOKIES env var
     env_cookies = os.environ.get('YOUTUBE_COOKIES', '').strip()
     if env_cookies:
         try:
             content = env_cookies.replace('\\n', '\n').replace('\r\n', '\n').replace('\r', '\n')
             with open(TMP_COOKIE_FILE, 'w', encoding='utf-8', newline='\n') as f:
                 f.write(content)
-            print('[cookies] Loaded cookies from YOUTUBE_COOKIES env var')
+            print('[cookies] Loaded from YOUTUBE_COOKIES env var')
             return {'cookiefile': TMP_COOKIE_FILE}
         except Exception as e:
             print(f'[cookies] Failed to write env cookies: {e}')
 
-    print('[cookies] No cookies found — some videos may fail')
     return {}
+
+
+def get_ydl_opts(skip_download: bool = True, extract_flat: bool = False) -> dict:
+    """
+    Build the full yt-dlp options dict with cookies, proxy, and
+    YouTube-specific settings to bypass bot detection.
+    """
+    opts: dict = {
+        'quiet': True,
+        'no_warnings': True,
+        'skip_download': skip_download,
+        'extract_flat': extract_flat,
+        'user_agent': (
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+            'AppleWebKit/537.36 (KHTML, like Gecko) '
+            'Chrome/131.0.0.0 Safari/537.36'
+        ),
+        # Use 'web' client — works best with PO token plugin
+        'extractor_args': {
+            'youtube': {'player_client': ['web']}
+        },
+    }
+
+    # Cookies
+    cookie_opts = _get_cookie_opts()
+    if cookie_opts:
+        opts.update(cookie_opts)
+        print('[yt-dlp] Using cookies')
+    else:
+        print('[yt-dlp] No cookies')
+
+    # Proxy (residential proxy bypasses datacenter IP blocks)
+    if PROXY_URL:
+        opts['proxy'] = PROXY_URL
+        print(f'[yt-dlp] Using proxy')
+
+    return opts
 
 
 # ─── CORS ─────────────────────────────────────────────────────────────────────
@@ -208,20 +239,22 @@ async def download(request: Request):
         if os.path.exists(tmp_video):
             os.unlink(tmp_video)
 
-        # Build cookie args for the CLI command
-        cookie_opts = get_cookie_opts()
-        cookie_args = []
+        # Build CLI args from the same options used by the library
+        extra_args = []
+        cookie_opts = _get_cookie_opts()
         if 'cookiefile' in cookie_opts:
-            cookie_args = ['--cookies', cookie_opts['cookiefile']]
+            extra_args += ['--cookies', cookie_opts['cookiefile']]
+        if PROXY_URL:
+            extra_args += ['--proxy', PROXY_URL]
 
         cmd = [
             sys.executable, '-m', 'yt_dlp',
             '--user-agent',
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
             'AppleWebKit/537.36 (KHTML, like Gecko) '
-            'Chrome/122.0.0.0 Safari/537.36',
-            '--extractor-args', 'youtube:player_client=tv_embedded,web',
-            *cookie_args,
+            'Chrome/131.0.0.0 Safari/537.36',
+            '--extractor-args', 'youtube:player_client=web',
+            *extra_args,
             '-f', format_id,
             '--merge-output-format', 'mp4',
             '-o', tmp_video,
@@ -301,21 +334,7 @@ async def get_info(request: Request):
 
         print(f"DEBUG: Processing URL: {url}")
 
-        ydl_opts = {
-            'quiet': True,
-            'no_warnings': True,
-            'extract_flat': False,
-            'skip_download': True,
-            'user_agent': (
-                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
-                'AppleWebKit/537.36 (KHTML, like Gecko) '
-                'Chrome/122.0.0.0 Safari/537.36'
-            ),
-            'extractor_args': {
-                'youtube': {'player_client': ['tv_embedded', 'web']}
-            },
-            **get_cookie_opts(),
-        }
+        ydl_opts = get_ydl_opts(skip_download=True, extract_flat=False)
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
@@ -357,15 +376,7 @@ async def get_formats(request: Request):
         if not url:
             return JSONResponse({'error': 'URL is required'}, status_code=400)
 
-        ydl_opts = {
-            'quiet': True,
-            'no_warnings': True,
-            'skip_download': True,
-            'extractor_args': {
-                'youtube': {'player_client': ['tv_embedded', 'web']}
-            },
-            **get_cookie_opts(),
-        }
+        ydl_opts = get_ydl_opts(skip_download=True)
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
