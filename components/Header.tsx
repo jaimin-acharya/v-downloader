@@ -24,7 +24,7 @@ export default function Header() {
   ];
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur-md supports-[backdrop-filter]:bg-background/80">
+    <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur-md supports-[backdrop-filter]:bg-background/20">
       <div className="container mx-auto flex h-16 items-center justify-between px-4 sm:px-6">
         {/* Logo */}
         <Link href="/" className="flex items-center gap-2 group transition-transform hover:scale-105">
@@ -78,11 +78,11 @@ export default function Header() {
 
       {/* Mobile Menu Overlay */}
       <div
-        className={`fixed inset-x-0 bottom-0 top-[65px] z-40 bg-black backdrop-blur-3xl md:hidden transition-all duration-300 ease-in-out ${
+        className={`fixed inset-x-0 bottom-0 top-[65px] z-40 bg-background/95 backdrop-blur-sm supports-[backdrop-filter]:bg-background/70 md:hidden transition-all duration-300 ease-in-out ${
           isOpen ? "opacity-100 visible" : "opacity-0 invisible pointer-events-none"
         }`}
       >
-        <nav className={`bg-black flex flex-col items-center justify-center min-h-[70vh] gap-10 p-10 transition-all duration-500 ${isOpen ? "translate-y-0 opacity-100" : "translate-y-10 opacity-0"}`}>
+        <nav className={`bg-background/95 backdrop-blur-sm supports-[backdrop-filter]:bg-background/70 flex flex-col items-center justify-center min-h-[70vh] gap-10 p-10 transition-all duration-500 ${isOpen ? "translate-y-0 opacity-100" : "translate-y-10 opacity-0"}`}>
           {navLinks.map((link) => (
             <Link
               key={link.name}
