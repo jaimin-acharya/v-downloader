@@ -70,8 +70,11 @@ export default function Downloader() {
       {/* Hero */}
       <div className="text-center space-y-4 md:space-y-6 mb-12">
         <h1 className="text-4xl sm:text-5xl md:text-7xl font-black mb-6 leading-tight tracking-tight text-slate-900 dark:text-white px-4">
-          Download Videos From{" "}
-          <span className="text-primary italic">Any Platform</span> Instantly
+         Download Videos From{" "}
+          <br />
+          <span className="text-primary italic">Any Platform</span> 
+          <br />
+          Instantly
         </h1>
         <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto px-6">
           Paste a link from YouTube, Instagram, Facebook, X, or TikTok and download instantly.
